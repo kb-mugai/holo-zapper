@@ -410,12 +410,12 @@ function renderEPG(data) {
     }
     gridBody.style.height = `${currentY}px`;
 
-    // --- 3. チャンネル並び替えと描画 (以下変更なし) ---
+    // --- 3. チャンネル並び替えと描画（youtubeでのlive属性になってなくても、元々予定の時刻を過ぎていればNOW枠へ移動）※他ソートに関する同じ計算式が2つある（計3つ）
     orderedIds = Object.keys(channels).sort((a, b) => {
         const isLive = (ch) => ch.streams.some(s => {
             if (s.status === 'live') return true;
             const st = new Date(s.start_actual || s.start_scheduled);
-            return (now >= st && (now - st) < 3 * 60 * 60 * 1000);
+            return (now >= st && (now - st) < 12 * 60 * 60 * 1000); // 予定あるのに開始してなくても12時間以内ならNOW枠に残す
         });
         const liveA = isLive(channels[a]) ? 1 : 0;
         const liveB = isLive(channels[b]) ? 1 : 0;
@@ -439,7 +439,7 @@ function renderEPG(data) {
         const live = ch.streams.find(s => {
             if (s.status === 'live') return true;
             const st = new Date(s.start_actual || s.start_scheduled);
-            return (now >= st && (now - st) < 3 * 60 * 60 * 1000);
+            return (now >= st && (now - st) < 12 * 60 * 60 * 1000);
         });
 
         const nowBox = document.createElement('div');
@@ -562,7 +562,7 @@ function play(id, name, title, member) {
                 if (s.status === 'live') return true;
                 const st = new Date(s.start_actual || s.start_scheduled);
                 const nowTime = new Date();
-                return (nowTime >= st && (nowTime - st) < 3 * 60 * 60 * 1000);
+                return (nowTime >= st && (nowTime - st) < 12 * 60 * 60 * 1000);
             });
         });
 
