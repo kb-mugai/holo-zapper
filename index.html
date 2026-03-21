@@ -449,8 +449,8 @@ function renderEPG(data) {
             isMember = checkMemberOnly(live.title);
             const titleL = live.title.toLowerCase();
             if (isMember) { nowBoxClass += ' member'; prefix = '🔒 '; }
-            else if (live.topic_id === '3d_stream' || titleL.includes('3d') || titleL.includes('３ｄ')) { nowBoxClass += ' live3d'; }
-            else if (live.topic_id === 'singing' || titleL.includes('歌枠') || titleL.includes('sing') || titleL.includes('karaoke')) { nowBoxClass += ' singing'; }
+            else if (live.topic_id === '3d_stream' || titleL.includes('3d') || titleL.includes('３ｄ') || titleL.includes('アコースティックlive') || titleL.includes('アコースティックライブ')) { nowBoxClass += ' live3d'; }
+            else if (live.topic_id === 'singing' || titleL.includes('歌枠') || titleL.includes('sing') || titleL.includes('karaoke') || titleL.includes('弾き語り')) { nowBoxClass += ' singing'; }
             displayTitle = truncate(live.title, 40);
             nowBox.onclick = () => play(live.id, ch.info.name, live.title, isMember);
         } else { nowBoxClass += ' empty'; }
