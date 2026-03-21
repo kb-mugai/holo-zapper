@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <link rel="icon" href="favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="icon.png">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>ホロザッパー ver1.0.10beta1|試験アプデ継続中|非公式ホロライブJPメンバー専用TV風アプリ</title>
+    <meta name="description" content="hololiveJPメンバーに限定したシンプル非公式TV風アプリ。視聴と番組表機能。">
+<style>
+        :root {
+            --bg: #0f0f0f; /*背景色*/
+            --accent: #00d4ff; /*アクセントカラー*/
+            --header-h: 50px; /*ヘッダー（切替ボタン・視聴中ch名エリア）の高さ*/
+            --ch-width: 100px; /*チャンネル名の幅*/
+            --time-w: 30px; /*時刻軸の幅*/
+            --sticky-top-h: 130px; /*時刻NOWエリアの高さ*/
+            --slot-h: 60px; /*各スロット高さ*/
+            --full-h: 100dvh; /*番組表自体の最大縦サイズ*/
+        }
+
+        /* 1. 全要素の計算を「境界線込み」に統一 */
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body, html { margin: 0; padding: 0; height: var(--full-h); background: var(--bg); color: #fff; font-family: sans-serif; overflow: hidden; }
+
+        header {
+            height: var(--header-h); background: #1a1a1a; display: flex;
+            align-items: center; justify-content: space-between; padding: 0 10px;
+            border-bottom: 1px solid #333; z-index: 2000;
+        }
+        
+        .nav-group { display: flex; gap: 8px; align-items: center; }
+        /* チャンネル名の省略設定 */
+        #current-ch-name {
+            font-size: 11px; 
+            color: var(--accent); 
+            width: 120px; /* 固定幅 */
+            text-align: center; 
+            overflow: hidden; 
+            text-overflow: ellipsis; /* はみ出しを「...」に */
+            white-space: nowrap;
+            font-weight: bold;
+            display: inline-block;
+        }
+        button { 
+            background: #333; border: 1px solid #444; color: #fff; 
+            padding: 6px 10px; cursor: pointer; border-radius: 6px; 
+            font-size: 14px; /* アイコンを少し大きく表示 */
+            font-weight: bold; 
+            transition: 0.2s;
+        }
+        button.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+        #app-container { display: flex; height: calc(var(--full-h) - var(--header-h)); width: 100%; position: relative; }
+
+        #player-section { flex: 1; background: #000; position: relative; z-index: 10; overflow: hidden; }
+        #chat-area { width: 320px; background: #000; border-left: 1px solid #222; z-index: 5; }
+        #epg-section { display: none; flex: 1; overflow: auto; width: 100%; height: 100%; position: relative; background: var(--bg); }
+        
+        #video-iframe { width: 100%; height: 100%; border: none; }
+
+        body.mode-epg #epg-section { display: block; }
+
+        /* PC & スマホ横のEPGモード: 25% 小窓 */
+        @media screen and (min-width: 769px), (orientation: landscape) {
+            body.mode-epg #player-section {
+                position: fixed; bottom: 15px; right: 15px; 
+                width: 25vw; min-width: 180px; aspect-ratio: 16/9;
+                z-index: 1500; border: 2px solid #444; box-shadow: 0 10px 30px #000; flex: none;
+                pointer-events: auto;
+            }
+            body.mode-epg #chat-area { display: none; }
+        }
+
+        /* スマホ縦 */
+        @media screen and (max-width: 768px) and (orientation: portrait) {
+            #app-container { flex-direction: column; }
+            #player-section { height: 30vh; flex: none; }
+            #chat-area { width: 100%; flex: 1; border-left: none; border-top: 1px solid #222; overflow: hidden; }
+            body.mode-watch #epg-section { display: none; }
+            body.mode-epg #chat-area { display: none; }
+            body.mode-epg #epg-section { display: block; flex: 1; }
+            body.mode-epg #player-section { position: relative; width: 100%; bottom: auto; right: auto; aspect-ratio: auto; height: 30vh; }
+        }
+
+        /* スマホ横・視聴画面：チャットなし全画面 */
+        @media screen and (max-width: 950px) and (orientation: landscape) {
+            header { height: 40px; }
+            #app-container { height: calc(var(--full-h) - 40px); }
+            body.mode-watch #chat-area { display: none !important; }
+            body.mode-watch #player-section { width: 100vw !important; height: 100%; flex: none; }
+            #video-iframe { width: 100%; height: 100%; object-fit: contain; }
+        }
+
+        /* --- EPG内部デザイン修正 --- */
+        #epg-wrapper { display: inline-block; position: relative; min-width: 100%; vertical-align: top; }
+        
+        /* 2. 時刻軸のborderを「内側」に */
+        #epg-times-axis { position: sticky; left: 0; width: var(--time-w); background: #151515; border-right: 1px solid #333; z-index: 100; float: left; }
+        
+        .time-axis-header {
+            height: var(--sticky-top-h); background: #1a1a1a; display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; color: var(--accent); font-weight: bold; font-size: 11px;
+            border-bottom: 2px solid #f33; position: sticky; top: 0; z-index: 110;
+        }
+
+        /* 3. マスの高さを120px（線込み）に固定 */
+        .time-slot { height: var(--slot-h); display: flex; align-items: center; justify-content: center; font-size: 10px; border-bottom: 1px solid #333; }
+
+        #epg-sticky-header { position: sticky; top: 0; z-index: 90; display: flex; background: var(--bg); margin-left: var(--time-w); width: fit-content;}
+        
+        .ch-col-header { width: var(--ch-width); min-width: var(--ch-width); border-right: 1px solid #333; flex-shrink: 0; }
+        .ch-name-box { height: 30px; background: #1a1a1a; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #333; font-size: 10px; 
+        }
+        /* EPGのチャンネル名ボックスが「視聴中」の時のスタイル */
+.ch-name-box.active-ch {
+    background: var(--accent) !important; /* アクセントカラー（水色）に変更 */
+    color: #000 !important; /* 文字を黒にして読みやすく */
+    font-weight: bold;
+    box-shadow: inset 0 0 10px rgba(255,255,255,0.5);
+}
+        
+        /* 4. NOWエリアの高さ 100px（線込み） */
+        .now-stream-box {
+            height: 100px; background: #200; border-bottom: 2px solid #f33; padding: 8px; font-size: 10px; cursor: pointer;
+            overflow: hidden; display: flex; align-items: center; justify-content: center; text-align: center; font-weight: bold;
+        }
+        .now-stream-box.member { background: #003311; border-bottom-color: #00ff66;  }
+        .now-stream-box.singing { background: #33001a; border-bottom-color: #ff69b4;  }
+        .now-stream-box.live3d { background: #332a00; border-bottom-color: #ffd700;  }
+        .now-stream-box.empty { background: #111; border-bottom-color: #333;  }
+
+        /* 5. 配信予定エリアの背景グリッド：線の重なりを解消 */
+        #epg-grid-body { position: relative; margin-left: var(--time-w); background: #0f0f0f; }
+        #epg-grid-body::before {
+            content: ""; position: absolute; inset: 0;
+            background-image: linear-gradient(to bottom, #333 1px, transparent 1px);
+            background-size: 100% var(--slot-h); 
+            background-position: 0 -1px; /* 最初の1pxを上にずらしてborderと同期 */
+            pointer-events: none; z-index: 1;
+        }
+        #epg-grid-body::after {
+            content: ""; position: absolute; inset: 0;
+            background-image: linear-gradient(to right, #333 1px, transparent 1px);
+            background-size: var(--ch-width) 100%; 
+            background-position: -1px 0; /* 左の1pxをずらしてborderと同期 */
+            pointer-events: none; z-index: 1;
+        }
+
+        /* メン限ガードを動画の上に重ねる設定 */
+        #member-guard {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85); /* 背景を暗く */
+            z-index: 1000; /* iframeより上に */
+            display: none; /* JSでflexに切り替え */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(4px); /* 背景をぼかすとおしゃれ */
+        }
+.stream-card {
+    position: absolute;
+    width: calc(var(--ch-width) - 4px);
+    margin: 0 2px;
+    height: 58px; 
+    padding: 2px 4px; 
+    border-radius: 2px;
+    font-size: 9px;
+    line-height: 1.1;
+    cursor: pointer;
+    background: #222;
+    border-left: 3px solid #f33; /* デフォルトを赤に */
+    color: #eee;
+    overflow: hidden;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    z-index: 10;
+    word-break: break-all;
+}
+
+/* 配信種別ごとの色分け */
+.stream-card.member { border-left-color: #00ff66; }  /* メンバー限定: 緑 */
+.stream-card.live3d { border-left-color: #ffd700; }  /* 3Dライブ: 黄 */
+.stream-card.singing { border-left-color: #ff69b4; } /* 歌枠: ピンク */
+
+        /* --- 透明ガードの統合設定 --- */
+        
+        /* ガード自体の見た目（完全に透明だが、クリックは吸い取る） */
+        #player-section.needs-first-tap::after {
+            content: ""; /* 文字も出さず完全に透明 */
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0); /* 完全に透明 */
+            z-index: 2005;
+            display: block;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+
+        /* クラスがない時は絶対に出さない */
+        #player-section:not(.needs-first-tap)::after {
+            display: none !important;
+        }
+
+        /* ガードがある間は、背後のiframeへの直接操作を禁止 */
+        #player-section.needs-first-tap iframe {
+            pointer-events: none;
+        }
+        /* タップ後はiframeの操作を許可 */
+        #player-section:not(.needs-first-tap) iframe {
+            pointer-events: auto;
+        }
+
+    </style>
+</head>
+<body class="mode-watch">
+
+<header>
+    <div class="nav-group">
+        <button id="btn-watch" class="active" onclick="setMode('watch')" title="視聴">見</button>
+        <button id="btn-epg" onclick="setMode('epg')" title="番組表">表</button>
+    </div>
+    
+    <div class="nav-group">
+        <button onclick="zap(-1)">◀</button>
+        <span id="current-ch-name">---</span>
+        <button onclick="zap(1)">▶</button>
+    </div>
+
+    <div style="width: 44px;"></div> 
+</header>
+
+<div id="app-container">
+    <div id="player-section">
+        <div id="video-container" style="width:100%; height:100%;">
+            <div id="member-guard">
+                <div style="font-size: 40px; margin-bottom: 10px;">🔒</div>
+                <div id="guard-title" style="color:#00ff66; margin-bottom:15px; font-size:11px; font-weight:bold;">メン限</div>
+                <button onclick="openYouTube()" style="background:#f00; border:none; padding:10px 20px; border-radius:5px; color:#fff; font-weight:bold; cursor:pointer;">YouTubeで見る</button>
+                <button onclick="closeGuard()" style="margin-top:15px; background:none; border:none; color:#999; text-decoration:underline; cursor:pointer;">閉じる</button>
+            </div>
+            <iframe id="video-iframe" src="" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+        </div>
+    </div>
+    <div id="chat-area"><iframe id="chat-iframe" style="width:100%; height:100%; border:none;"></iframe></div>
+    
+    <div id="epg-section">
+        <div id="epg-wrapper">
+            <div id="epg-times-axis">
+                <div class="time-axis-header"><div id="epg-date">--/--</div><div style="margin-top:5px;">NOW</div></div>
+                <div id="epg-times-list"></div>
+            </div>
+            <div id="epg-sticky-header"></div>
+            <div id="epg-grid-body"></div>
+        </div>
+    </div>
+</div>
+<script>
+const GAS_URL = "https://script.google.com/macros/s/AKfycbwS7RwwL7n15B8LNEu3AK9P9pmghhVK2cKJ6S-PTR2M2eYAyiPztbCIKs1jM5Ob6uT_bA/exec";
+    const ALLOWED_GENS = ["0aOfficial","0dOfficial","0th Gen", "1st Gen", "2nd Gen", "Gamers", "3rd Gen", "4th Gen", "5th Gen", "6th Gen", "Secret Society holoX", "DEV_IS ReGLOSS", "DEV_IS FLOW\\s?GLOW"];
+    
+    let cachedData, orderedIds = [], channels = {}, currentVideoId = "";
+    let isFirstPlay = true;
+
+// 指定した文字数（len）を超えたら「...」にする関数
+function truncate(str, len) {
+    if (!str) return "";
+    return str.length <= len ? str : str.substr(0, len) + "...";
+}
+    async function loadEPG() {
+        try {
+            console.log("Fetching EPG data...");
+            const res = await fetch(GAS_URL);
+            cachedData = await res.json();
+            
+            if (!cachedData || cachedData.length === 0) {
+                console.warn("No data received from GAS");
+                return;
+            }
+            
+            renderEPG(cachedData);
+        } catch(e) { 
+            console.error("EPG Load Error:", e); 
+        }
+    }
+
+    function checkMemberOnly(title) { return /メン限|メンバー限定|Member Only|Membership/i.test(title); }
+
+function renderEPG(data) {
+    const stickyHeader = document.getElementById('epg-sticky-header');
+    const gridBody = document.getElementById('epg-grid-body');
+    const timesList = document.getElementById('epg-times-list');
+    const dateDisplay = document.getElementById('epg-date');
+    
+    stickyHeader.innerHTML = ''; gridBody.innerHTML = ''; timesList.innerHTML = '';
+    const now = new Date();
+    dateDisplay.innerText = `${now.getMonth()+1}/${now.getDate()}`;
+    const startH = now.getHours();
+
+    const gridStartTime = new Date(now);
+    gridStartTime.setMinutes(0, 0, 0);
+
+    channels = {};
+    data.forEach(s => {
+        if (s.channel.org !== "Hololive") return;
+        const sub = (s.channel.suborg || "").toLowerCase();
+        if (sub.includes("holostars") || sub.includes("english") || sub.includes("indonesia")) return;
+        const genIndex = ALLOWED_GENS.findIndex(g => new RegExp(g.toLowerCase()).test(sub));
+        if (genIndex !== -1) {
+            if (!channels[s.channel.id]) {
+                channels[s.channel.id] = { info: s.channel, streams: [], genScore: genIndex };
+            }
+            channels[s.channel.id].streams.push(s);
+        }
+    });
+
+    let maxEndDate = new Date(now); 
+    Object.values(channels).forEach(ch => {
+        ch.streams.forEach(s => {
+            const streamDate = new Date(s.start_actual || s.start_scheduled);
+            if (streamDate > maxEndDate) maxEndDate = streamDate;
+        });
+    });
+
+    // --- 1. 表示すべき時間帯を判定 ---
+    const hourMap = {};
+    const gridStartTimeForMap = new Date(gridStartTime); 
+    Object.values(channels).forEach(ch => {
+        ch.streams.forEach(s => {
+            const st = new Date(s.start_actual || s.start_scheduled);
+            const et = new Date(st.getTime() + 60 * 60 * 1000);
+            let loopTime = new Date(st);
+            loopTime.setMinutes(0, 0, 0);
+
+            while (loopTime < et) {
+                const hourDiff = loopTime - gridStartTimeForMap;
+                if (hourDiff >= 0) {
+                    const hourIndex = Math.floor(hourDiff / (1000 * 60 * 60));
+                    hourMap[hourIndex] = true;
+                }
+                loopTime.setHours(loopTime.getHours() + 1);
+            }
+        });
+    });
+
+    const displayEndDate = new Date(maxEndDate);
+    displayEndDate.setHours(displayEndDate.getHours() + 1, 0, 0, 0);
+    const totalHours = Math.ceil((displayEndDate - gridStartTime) / (1000 * 60 * 60));
+
+    // --- 2. 時刻軸と背景グリッドの動的生成 ---
+    let currentY = 0;
+    const hourSlotHeight = 60; // --slot-h
+    const minuteToY = [];
+    let lastDateValue = -1;
+    let isFirstSlotAfterDateChange = false; 
+
+    for (let i = 0; i < totalHours; i++) {
+        const loopDate = new Date(gridStartTime);
+        loopDate.setHours(gridStartTime.getHours() + i);
+        const hour = loopDate.getHours();
+        const currentDateValue = loopDate.getDate();
+
+        if (lastDateValue !== -1 && lastDateValue !== currentDateValue) {
+            isFirstSlotAfterDateChange = true;
+        }
+
+        if (hourMap[i]) {
+            // 背景色の決定 (偶数日・奇数日)
+            const isEvenDay = currentDateValue % 2 === 0;
+            const bgColor = isEvenDay ? 'rgba(0, 50, 100, 0.12)' : 'transparent';
+            
+            // メイングリッド側の背景生成
+            if (bgColor !== 'transparent') {
+                const bg = document.createElement('div');
+                bg.style.cssText = `position: absolute; left: 0; top: ${currentY}px; width: 100%; height: ${hourSlotHeight}px; background: ${bgColor}; z-index: 0; pointer-events: none;`;
+                gridBody.appendChild(bg);
+            }
+
+            // 時刻ラベルの生成
+            const div = document.createElement('div');
+            div.className = 'time-slot';
+            
+            // 【変更箇所】時刻枠自体の背景色をグリッドと合わせる
+            div.style.backgroundColor = bgColor;
+
+            if (i === 0 || hour === 0 || isFirstSlotAfterDateChange) {
+                const dateText = `${loopDate.getMonth() + 1}/${currentDateValue}`;
+                const timeText = (hour === 0) ? `0:00` : `${hour}:00`;
+                div.innerHTML = `<div style="font-size:10px; color:var(--accent); font-weight:bold;">${dateText}</div><div>${timeText}</div>`;
+                div.style.cssText += "height:var(--slot-h); display:flex; flex-direction:column; justify-content:center; line-height:1.1;";
+                // 日付ラベル部分は少しだけ暗くして視認性を確保
+                div.style.backgroundColor = isEvenDay ? 'rgba(0, 30, 70, 0.25)' : 'rgba(255, 255, 255, 0.03)';
+                
+                isFirstSlotAfterDateChange = false; 
+            } else {
+                div.innerText = `${hour}:00`;
+            }
+            timesList.appendChild(div);
+
+            for (let m = 0; m < 60; m++) { minuteToY.push(currentY + m); }
+            currentY += hourSlotHeight;
+        } else {
+            for (let m = 0; m < 60; m++) { minuteToY.push(-1); }
+        }
+        lastDateValue = currentDateValue;
+    }
+    gridBody.style.height = `${currentY}px`;
+
+    // --- 3. チャンネル並び替えと描画 (以下変更なし) ---
+    orderedIds = Object.keys(channels).sort((a, b) => {
+        const isLive = (ch) => ch.streams.some(s => {
+            if (s.status === 'live') return true;
+            const st = new Date(s.start_actual || s.start_scheduled);
+            return (now >= st && (now - st) < 3 * 60 * 60 * 1000);
+        });
+        const liveA = isLive(channels[a]) ? 1 : 0;
+        const liveB = isLive(channels[b]) ? 1 : 0;
+        if (liveA !== liveB) return liveB - liveA;
+        return channels[a].genScore - channels[b].genScore;
+    });
+
+    gridBody.style.width = `${orderedIds.length * 100}px`;
+
+    orderedIds.forEach((chId, idx) => {
+        const ch = channels[chId];
+        const chX = idx * 100;
+        const col = document.createElement('div');
+        col.className = 'ch-col-header';
+
+        const nameBox = document.createElement('div');
+        nameBox.className = 'ch-name-box';
+        if (ch.info.name === document.getElementById('current-ch-name').innerText) nameBox.classList.add('active-ch');
+        nameBox.innerHTML = `<img src="${ch.info.photo}" style="width:18px;height:18px;border-radius:50%;margin-right:4px;">${ch.info.name.substring(0,10)}`; // ch名文字数
+        
+        const live = ch.streams.find(s => {
+            if (s.status === 'live') return true;
+            const st = new Date(s.start_actual || s.start_scheduled);
+            return (now >= st && (now - st) < 3 * 60 * 60 * 1000);
+        });
+
+        const nowBox = document.createElement('div');
+        let nowBoxClass = 'now-stream-box', isMember = false, displayTitle = '---', prefix = '';
+
+        if (live) {
+            isMember = checkMemberOnly(live.title);
+            const titleL = live.title.toLowerCase();
+            if (isMember) { nowBoxClass += ' member'; prefix = '🔒 '; }
+            else if (live.topic_id === '3d_stream' || titleL.includes('3d') || titleL.includes('３ｄ')) { nowBoxClass += ' live3d'; }
+            else if (live.topic_id === 'singing' || titleL.includes('歌枠') || titleL.includes('sing') || titleL.includes('karaoke')) { nowBoxClass += ' singing'; }
+            displayTitle = truncate(live.title, 40);
+            nowBox.onclick = () => play(live.id, ch.info.name, live.title, isMember);
+        } else { nowBoxClass += ' empty'; }
+
+        nowBox.className = nowBoxClass;
+        nowBox.innerHTML = prefix + displayTitle;
+        col.appendChild(nameBox); col.appendChild(nowBox);
+        stickyHeader.appendChild(col);
+
+        ch.streams.forEach(s => {
+            if (live && s.id === live.id) return;
+            const st = new Date(s.start_actual || s.start_scheduled);
+            const diffMin = Math.floor((st - gridStartTime) / (1000 * 60));
+            const topPos = (diffMin >= 0 && diffMin < minuteToY.length) ? minuteToY[diffMin] : -1;
+            
+            if (topPos !== -1) {
+                const card = document.createElement('div');
+                card.className = 'stream-card';
+                const titleL = s.title.toLowerCase();
+                const mem = checkMemberOnly(s.title);
+                if (mem) card.classList.add('member');
+                else if (s.topic_id === '3d_stream' || titleL.includes('3d') || titleL.includes('３ｄ')) card.classList.add('live3d');
+                else if (s.topic_id === 'singing' || titleL.includes('歌枠') || titleL.includes('sing') || titleL.includes('karaoke')) card.classList.add('singing');
+
+                card.style.cssText = `left:${chX}px; top:${topPos}px; height:60px;`;
+                const dateS = `${st.getMonth()+1}/${st.getDate()} ${st.getHours()}:${st.getMinutes().toString().padStart(2,'0')}`;
+                card.innerHTML = `<div style="color:var(--accent);font-weight:bold;font-size:9px;margin-bottom:4px;">${dateS}</div><div style="line-height:1.2; word-break:break-all;">${truncate(s.title, 40)}</div>`;
+                card.onclick = () => play(s.id, ch.info.name, s.title, mem);
+                gridBody.appendChild(card);
+            }
+        });
+    });
+
+    if (isFirstPlay && orderedIds.length > 0) {
+        const firstId = orderedIds[0];
+        const first = channels[firstId].streams.find(s => {
+            if (s.status === 'live') return true;
+            const st = new Date(s.start_actual || s.start_scheduled);
+            return (now >= st && (now - st) < 3 * 60 * 60 * 1000);
+        }) || channels[firstId].streams[0];
+        if (first) play(first.id, channels[firstId].info.name, first.title, checkMemberOnly(first.title));
+        isFirstPlay = false;
+    }
+}
+function play(id, name, title, member) {
+        currentVideoId = id;
+        const playerSection = document.getElementById('player-section');
+        
+        // スマホ判定
+        const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        if (isMobileDevice) {
+            playerSection.classList.add('needs-first-tap');
+        } else {
+            playerSection.classList.remove('needs-first-tap');
+        }
+
+        document.getElementById('video-iframe').src = `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&rel=0&enablejsapi=1`;
+        document.getElementById('chat-iframe').src = `https://www.youtube.com/live_chat?v=${id}&embed_domain=${window.location.hostname}`;
+
+        document.querySelectorAll('.ch-name-box').forEach(el => {
+        el.classList.remove('active-ch');
+        // 表示されているテキストが切り替えた名前と一致するか判定
+        // (substring(0,10)で描画されているので、前方一致や完全一致でチェック)
+        if (el.innerText.trim() === name.substring(0,10).trim()) { // 必ずチャンネル名のtrimと合わせること
+            el.classList.add('active-ch');
+        }
+    });
+        
+        document.getElementById('current-ch-name').innerText = name;
+        if (member) {
+            document.getElementById('guard-title').innerText = title;
+            document.getElementById('member-guard').style.display = 'flex';
+        } else {
+            closeGuard();
+        }
+    }
+
+    // 透明ガードのタップイベント（WATCH/EPG共通）
+    document.addEventListener('DOMContentLoaded', () => {
+        const playerSection = document.getElementById('player-section');
+        const handleStart = function(e) {
+            // ガードが存在する場合のみ処理
+            if (playerSection.classList.contains('needs-first-tap')) {
+                playerSection.classList.remove('needs-first-tap'); // ガードを消す
+                
+                // 再生命令を送る
+                const iframe = document.getElementById('video-iframe');
+                if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                }
+                
+                // リンク離脱防止（EPGモードの小窓時などに有効）
+                e.preventDefault();
+                e.stopPropagation();
+                console.log("Guard cleared & Play command sent");
+            }
+        };
+        // キャプチャフェーズ(true)で確実に拾う
+        playerSection.addEventListener('click', handleStart, true);
+        playerSection.addEventListener('touchstart', handleStart, { passive: false });
+    });
+
+    function closeGuard() { document.getElementById('member-guard').style.display = 'none'; }
+
+    function zap(dir) {
+        const lives = orderedIds.filter(id => {
+            return channels[id].streams.some(s => {
+                if (s.status === 'live') return true;
+                const st = new Date(s.start_actual || s.start_scheduled);
+                const nowTime = new Date();
+                return (nowTime >= st && (nowTime - st) < 3 * 60 * 60 * 1000);
+            });
+        });
+
+        if (lives.length === 0) return;
+        
+        let idx = lives.findIndex(id => channels[id].streams.some(s => s.id === currentVideoId));
+        idx = (idx === -1) ? 0 : (idx + dir + lives.length) % lives.length;
+        
+        const targetCh = channels[lives[idx]];
+        const targetStream = targetCh.streams.find(s => {
+            if (s.status === 'live') return true;
+            const st = new Date(s.start_actual || s.start_scheduled);
+            return (new Date() >= st);
+        }) || targetCh.streams[0];
+
+        play(targetStream.id, targetCh.info.name, targetStream.title, checkMemberOnly(targetStream.title));
+    }
+
+    function setMode(m) {
+        document.body.className = 'mode-' + m;
+        document.getElementById('btn-watch').classList.toggle('active', m === 'watch');
+        document.getElementById('btn-epg').classList.toggle('active', m === 'epg');
+    }
+
+    function openYouTube() { if (currentVideoId) window.open(`https://www.youtube.com/watch?v=${currentVideoId}`, '_blank'); }
+
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') zap(-1);
+        if (e.key === 'ArrowRight') zap(1);
+    });
+
+    loadEPG();
+    setInterval(loadEPG, 1000 * 60 * 2);
+</script>
+<script data-goatcounter="https://kb-mugai.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+</body>
+</html>
