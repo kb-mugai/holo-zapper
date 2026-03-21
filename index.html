@@ -449,7 +449,7 @@ function renderEPG(data) {
             isMember = checkMemberOnly(live.title);
             const titleL = live.title.toLowerCase();
             if (isMember) { nowBoxClass += ' member'; prefix = '🔒 '; }
-            else if (live.topic_id === '3d_stream' || titleL.includes('3d') || titleL.includes('３ｄ') || titleL.includes('アコースティックlive') || titleL.includes('アコースティックライブ')) { nowBoxClass += ' live3d'; }
+            else if (  live.topic_id === '3d_stream' || titleL.includes('3d') || titleL.includes('３ｄ') || (titleL.includes('アコースティック') && (titleL.includes('ライブ') || titleL.includes('live')))) { nowBoxClass += ' live3d'; }
             else if (live.topic_id === 'singing' || titleL.includes('歌枠') || titleL.includes('sing') || titleL.includes('karaoke') || titleL.includes('弾き語り')) { nowBoxClass += ' singing'; }
             displayTitle = truncate(live.title, 40);
             nowBox.onclick = () => play(live.id, ch.info.name, live.title, isMember);
@@ -472,8 +472,8 @@ function renderEPG(data) {
                 const titleL = s.title.toLowerCase();
                 const mem = checkMemberOnly(s.title);
                 if (mem) card.classList.add('member');
-                else if (s.topic_id === '3d_stream' || titleL.includes('3d') || titleL.includes('３ｄ')) card.classList.add('live3d');
-                else if (s.topic_id === 'singing' || titleL.includes('歌枠') || titleL.includes('sing') || titleL.includes('karaoke')) card.classList.add('singing');
+                else if (s.topic_id === '3d_stream' || titleL.includes('3d') || titleL.includes('３ｄ') || (titleL.includes('アコースティック') && (titleL.includes('ライブ') || titleL.includes('live')))) card.classList.add('live3d');
+                else if (s.topic_id === 'singing' || titleL.includes('歌枠') || titleL.includes('sing') || titleL.includes('karaoke') || titleL.includes('弾き語り')) card.classList.add('singing');
 
                 card.style.cssText = `left:${chX}px; top:${topPos}px; height:60px;`;
                 const dateS = `${st.getMonth()+1}/${st.getDate()} ${st.getHours()}:${st.getMinutes().toString().padStart(2,'0')}`;
