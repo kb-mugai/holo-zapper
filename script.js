@@ -1,0 +1,393 @@
+    (function() {
+        'use strict';
+    
+        // --- 設定値 -------------------------------------------
+        const config = {
+            GAS_URL: "https://script.google.com/macros/s/AKfycbwS7RwwL7n15B8LNEu3AK9P9pmghhVK2cKJ6S-PTR2M2eYAyiPztbCIKs1jM5Ob6uT_bA/exec",
+            ALLOWED_GENS: ["0aOfficial","0dOfficial","0th Gen", "1st Gen", "2nd Gen", "Gamers", "3rd Gen", "4th Gen", "5th Gen", "6th Gen", "Secret Society holoX", "DEV_IS ReGLOSS", "DEV_IS FLOW\s?GLOW"],
+            MEMBER_ONLY_REGEX: /メン限|メンバー限定|Member Only|Membership/i,
+            LIVE_THRESHOLD_MS: 12 * 60 * 60 * 1000,
+            UPDATE_INTERVAL_MS: 2 * 60 * 1000,
+            TRUNCATE_LIMIT: 40,
+            CH_NAME_TRUNCATE_LIMIT: 10,
+            HOUR_SLOT_HEIGHT: 60,
+            CH_COL_WIDTH: 100
+        };
+    
+        // --- アプリケーションの状態 -----------------------------
+        const state = {
+            cachedData: null,
+            orderedIds: [],
+            channels: {},
+            currentVideoId: "",
+            isFirstPlay: true,
+        };
+    
+        // --- DOM要素キャッシュ ----------------------------------
+        const dom = {
+            playerSection: document.getElementById('player-section'),
+            videoIframe: document.getElementById('video-iframe'),
+            chatIframe: document.getElementById('chat-iframe'),
+            currentChName: document.getElementById('current-ch-name'),
+            memberGuard: document.getElementById('member-guard'),
+            guardTitle: document.getElementById('guard-title'),
+            epgStickyHeader: document.getElementById('epg-sticky-header'),
+            epgGridBody: document.getElementById('epg-grid-body'),
+            epgTimesList: document.getElementById('epg-times-list'),
+            epgDate: document.getElementById('epg-date'),
+            btnWatch: document.getElementById('btn-watch'),
+            btnEpg: document.getElementById('btn-epg')
+        };
+    
+        // --- ユーティリティ関数 ---------------------------------
+        const utils = {
+            truncate: (str, len) => {
+                if (!str) return "";
+                return str.length <= len ? str : str.substr(0, len) + "...";
+            },
+            isMemberOnlyStream: (title) => config.MEMBER_ONLY_REGEX.test(title),
+            isLive: (stream, now = new Date(), threshold = config.LIVE_THRESHOLD_MS) => {
+                if (!stream) return false;
+                if (stream.status === 'live') return true;
+                const st = new Date(stream.start_actual || stream.start_scheduled);
+                return (now >= st && (now - st) < threshold);
+            },
+            getStreamStyleClass: (stream) => {
+                if (!stream) return '';
+                if (utils.isMemberOnlyStream(stream.title)) return 'member';
+                const titleL = stream.title.toLowerCase();
+                if (stream.topic_id === '3d_stream' || titleL.includes('3d') || titleL.includes('３ｄ') || (titleL.includes('アコースティック') && (titleL.includes('ライブ') || titleL.includes('live')))) {
+                    return 'live3d';
+                }
+                if (stream.topic_id === 'singing' || titleL.includes('歌枠') || titleL.includes('sing') || titleL.includes('karaoke') || titleL.includes('弾き語り')) {
+                    return 'singing';
+                }
+                return '';
+            }
+        };
+    
+        // --- API関連 ------------------------------------------
+        const api = {
+            loadEPG: async () => {
+                try {
+                    console.log("Fetching EPG data...");
+                    const res = await fetch(config.GAS_URL);
+                    state.cachedData = await res.json();
+                    if (!state.cachedData || state.cachedData.length === 0) {
+                        console.warn("No data received from GAS");
+                        return;
+                    }
+                    epg.render(state.cachedData);
+                } catch(e) { 
+                    console.error("EPG Load Error:", e); 
+                }
+            }
+        };
+    
+        // --- UI関連 -------------------------------------------
+        const ui = {
+            setMode: (m) => {
+                document.body.className = 'mode-' + m;
+                dom.btnWatch.classList.toggle('active', m === 'watch');
+                dom.btnEpg.classList.toggle('active', m === 'epg');
+            },
+            closeMemberGuard: () => { 
+                dom.memberGuard.style.display = 'none'; 
+            },
+            updateActiveChannel: (name) => {
+                document.querySelectorAll('.ch-name-box').forEach(el => {
+                    el.classList.remove('active-ch');
+                    if (el.innerText.trim() === name.substring(0, config.CH_NAME_TRUNCATE_LIMIT).trim()) {
+                        el.classList.add('active-ch');
+                    }
+                });
+            },
+            handleMobileGuard: (e) => {
+                if (dom.playerSection.classList.contains('needs-first-tap')) {
+                    dom.playerSection.classList.remove('needs-first-tap');
+                    const iframe = dom.videoIframe;
+                    if (iframe && iframe.contentWindow) {
+                        iframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                    }
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("Guard cleared & Play command sent");
+                }
+            }
+        };
+        
+        // --- プレイヤー関連 -------------------------------------
+        const player = {
+            play: (id, name, title, member) => {
+                state.currentVideoId = id;
+                const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                dom.playerSection.classList.toggle('needs-first-tap', isMobileDevice);
+    
+                dom.videoIframe.src = `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&rel=0&enablejsapi=1`;
+                dom.chatIframe.src = `https://www.youtube.com/live_chat?v=${id}&embed_domain=${window.location.hostname}`;
+                
+                dom.currentChName.innerText = name;
+                ui.updateActiveChannel(name);
+    
+                if (member) {
+                    dom.guardTitle.innerText = title;
+                    dom.memberGuard.style.display = 'flex';
+                } else {
+                    ui.closeMemberGuard();
+                }
+            },
+            changeChannel: (dir) => {
+                const lives = state.orderedIds.filter(id => {
+                    return state.channels[id].streams.some(s => utils.isLive(s));
+                });
+        
+                if (lives.length === 0) return;
+                
+                let idx = lives.findIndex(id => state.channels[id].streams.some(s => s.id === state.currentVideoId));
+                idx = (idx === -1) ? 0 : (idx + dir + lives.length) % lives.length;
+                
+                const targetCh = state.channels[lives[idx]];
+                const targetStream = targetCh.streams.find(s => utils.isLive(s)) || targetCh.streams[0];
+        
+                player.play(targetStream.id, targetCh.info.name, targetStream.title, utils.isMemberOnlyStream(targetStream.title));
+            },
+            openYouTube: () => { 
+                if (state.currentVideoId) window.open(`https://www.youtube.com/watch?v=${state.currentVideoId}`, '_blank'); 
+            }
+        };
+    
+            // --- EPG（番組表）関連 ----------------------------------
+            const epg = {
+                prepareChannelData: (data) => {
+                    state.channels = {};
+                    data.forEach(s => {
+                        if (s.channel.org !== "Hololive") return;
+                        const sub = (s.channel.suborg || "").toLowerCase();
+                        if (sub.includes("holostars") || sub.includes("english") || sub.includes("indonesia")) return;
+                        const genIndex = config.ALLOWED_GENS.findIndex(g => new RegExp(g.toLowerCase()).test(sub));
+                        if (genIndex !== -1) {
+                            if (!state.channels[s.channel.id]) {
+                                state.channels[s.channel.id] = { info: s.channel, streams: [], genScore: genIndex };
+                            }
+                            state.channels[s.channel.id].streams.push(s);
+                        }
+                    });
+                },
+        
+                calculateTimeAxis: (gridStartTime) => {
+                    let maxEndDate = new Date(gridStartTime);
+                    Object.values(state.channels).forEach(ch => ch.streams.forEach(s => {
+                        const streamDate = new Date(s.start_actual || s.start_scheduled);
+                        if (streamDate > maxEndDate) maxEndDate = streamDate;
+                    }));
+        
+                    const hourMap = {};
+                    Object.values(state.channels).forEach(ch => ch.streams.forEach(s => {
+                        const st = new Date(s.start_actual || s.start_scheduled);
+                        const et = new Date(st.getTime() + 60 * 60 * 1000); // 1h duration
+                        let loopTime = new Date(st);
+                        loopTime.setMinutes(0, 0, 0);
+                        while (loopTime < et) {
+                            const hourDiff = loopTime - gridStartTime;
+                            if (hourDiff >= 0) {
+                                const hourIndex = Math.floor(hourDiff / (1000 * 60 * 60));
+                                hourMap[hourIndex] = true;
+                            }
+                            loopTime.setHours(loopTime.getHours() + 1);
+                        }
+                    }));
+                    
+                    const displayEndDate = new Date(maxEndDate);
+                    displayEndDate.setHours(displayEndDate.getHours() + 1, 0, 0, 0);
+                    const totalHours = Math.ceil((displayEndDate - gridStartTime) / (1000 * 60 * 60));
+                    
+                    return { hourMap, totalHours };
+                },
+        
+                        renderTimeAxis: (timeAxis, gridStartTime) => {
+                            let currentY = 0;
+                            const minuteToY = [];
+                            let lastDateValue = -1;
+                            let isFirstSlotAfterDateChange = false;
+                
+                            for (let i = 0; i < timeAxis.totalHours; i++) {
+                                const loopDate = new Date(gridStartTime);
+                                loopDate.setHours(gridStartTime.getHours() + i);
+                                const hour = loopDate.getHours();
+                                const currentDateValue = loopDate.getDate();
+                
+                                if (lastDateValue !== -1 && lastDateValue !== currentDateValue) isFirstSlotAfterDateChange = true;
+                
+                                if (timeAxis.hourMap[i]) {
+                                    const isEvenDay = currentDateValue % 2 === 0;
+                                    
+                                    if (isEvenDay) {
+                                        const bg = document.createElement('div');
+                                        bg.className = 'grid-background even-day';
+                                        bg.style.top = `${currentY}px`;
+                                        bg.style.height = `${config.HOUR_SLOT_HEIGHT}px`;
+                                        dom.epgGridBody.appendChild(bg);
+                                    }
+                
+                                    const timeSlotDiv = document.createElement('div');
+                                    timeSlotDiv.className = 'time-slot';
+                                    if (isEvenDay) timeSlotDiv.classList.add('even-day');
+                
+                                    if (i === 0 || hour === 0 || isFirstSlotAfterDateChange) {
+                                        const dateText = `${loopDate.getMonth() + 1}/${currentDateValue}`;
+                                        const timeText = (hour === 0) ? `0:00` : `${hour}:00`;
+                                        timeSlotDiv.innerHTML = `<div class="time-slot-date">${dateText}</div><div>${timeText}</div>`;
+                                        timeSlotDiv.classList.add('time-slot-date-change');
+                                        timeSlotDiv.classList.add(isEvenDay ? 'even-day-label' : 'odd-day-label');
+                                        isFirstSlotAfterDateChange = false;
+                                    } else {
+                                        timeSlotDiv.innerText = `${hour}:00`;
+                                    }
+                                    dom.epgTimesList.appendChild(timeSlotDiv);
+                
+                                    for (let m = 0; m < 60; m++) { minuteToY.push(currentY + m); }
+                                    currentY += config.HOUR_SLOT_HEIGHT;
+                                } else {
+                                    for (let m = 0; m < 60; m++) { minuteToY.push(-1); }
+                                }
+                                lastDateValue = currentDateValue;
+                            }
+                            dom.epgGridBody.style.height = `${currentY}px`;
+                            return minuteToY;
+                        },
+                
+                        sortAndOrderChannels: (now) => {
+                            state.orderedIds = Object.keys(state.channels).sort((a, b) => {
+                                const liveA = state.channels[a].streams.some(s => utils.isLive(s, now));
+                                const liveB = state.channels[b].streams.some(s => utils.isLive(s, now));
+                                if (liveA !== liveB) return liveB - liveA;
+                                return state.channels[a].genScore - state.channels[b].genScore;
+                            });
+                        },
+                
+                        renderChannelHeaders: (now) => {
+                            dom.epgGridBody.style.width = `${state.orderedIds.length * config.CH_COL_WIDTH}px`;
+                
+                            state.orderedIds.forEach((chId) => {
+                                const ch = state.channels[chId];
+                                const col = document.createElement('div');
+                                col.className = 'ch-col-header';
+                
+                                const nameBox = document.createElement('div');
+                                nameBox.className = 'ch-name-box';
+                                if (ch.info.name === dom.currentChName.innerText) nameBox.classList.add('active-ch');
+                                nameBox.innerHTML = `<img class="ch-col-header-img" src="${ch.info.photo}">${utils.truncate(ch.info.name, config.CH_NAME_TRUNCATE_LIMIT)}`;
+                                
+                                const liveStream = ch.streams.find(s => utils.isLive(s, now));
+                
+                                const nowBox = document.createElement('div');
+                                let nowBoxClass = 'now-stream-box', isMember = false, displayTitle = '---', prefix = '';
+                
+                                if (liveStream) {
+                                    isMember = utils.isMemberOnlyStream(liveStream.title);
+                                    const styleClass = utils.getStreamStyleClass(liveStream);
+                                    if (styleClass) nowBoxClass += ' ' + styleClass;
+                                    if (isMember) prefix = '🔒 ';
+                                    displayTitle = utils.truncate(liveStream.title, config.TRUNCATE_LIMIT);
+                                    nowBox.onclick = () => player.play(liveStream.id, ch.info.name, liveStream.title, isMember);
+                                } else {
+                                    nowBoxClass += ' empty';
+                                }
+                                nowBox.className = nowBoxClass;
+                                nowBox.innerHTML = prefix + displayTitle;
+                                col.appendChild(nameBox); col.appendChild(nowBox);
+                                dom.epgStickyHeader.appendChild(col);
+                            });
+                        },
+                
+                        renderStreamCards: (minuteToY, gridStartTime, now) => {
+                            state.orderedIds.forEach((chId, idx) => {
+                                const ch = state.channels[chId];
+                                const chX = idx * config.CH_COL_WIDTH;
+                                const liveStream = ch.streams.find(s => utils.isLive(s, now));
+                
+                                ch.streams.forEach(s => {
+                                    if (liveStream && s.id === liveStream.id) return; // "NOW"枠にあるものは描画しない
+                                    const st = new Date(s.start_actual || s.start_scheduled);
+                                    const diffMin = Math.floor((st - gridStartTime) / (1000 * 60));
+                                    const topPos = (diffMin >= 0 && diffMin < minuteToY.length) ? minuteToY[diffMin] : -1;
+                                    
+                                    if (topPos !== -1) {
+                                        const card = document.createElement('div');
+                                        card.className = 'stream-card';
+                                        const mem = utils.isMemberOnlyStream(s.title);
+                                        const styleClass = utils.getStreamStyleClass(s);
+                                        if (styleClass) card.classList.add(styleClass);
+                
+                                        card.style.left = `${chX}px`;
+                                        card.style.top = `${topPos}px`;
+                
+                                        const dateS = `${st.getMonth()+1}/${st.getDate()} ${st.getHours()}:${st.getMinutes().toString().padStart(2,'0')}`;
+                                        card.innerHTML = `<div class="stream-card-date">${dateS}</div><div class="stream-card-title">${utils.truncate(s.title, config.TRUNCATE_LIMIT)}</div>`;
+                                        card.onclick = () => player.play(s.id, ch.info.name, s.title, mem);
+                                        dom.epgGridBody.appendChild(card);
+                                    }
+                                });
+                            });
+                        },        
+                triggerInitialPlay: (now) => {
+                    if (state.isFirstPlay && state.orderedIds.length > 0) {
+                        const firstId = state.orderedIds[0];
+                        const threeHours = 3 * 60 * 60 * 1000;
+                        const firstStream = state.channels[firstId].streams.find(s => utils.isLive(s, now, threeHours)) || state.channels[firstId].streams[0];
+                        if (firstStream) {
+                            player.play(firstStream.id, state.channels[firstId].info.name, firstStream.title, utils.isMemberOnlyStream(firstStream.title));
+                        }
+                        state.isFirstPlay = false;
+                    }
+                },
+        
+                render: (data) => {
+                    dom.epgStickyHeader.innerHTML = ''; 
+                    dom.epgGridBody.innerHTML = ''; 
+                    dom.epgTimesList.innerHTML = '';
+                    
+                    const now = new Date();
+                    dom.epgDate.innerText = `${now.getMonth()+1}/${now.getDate()}`;
+                    
+                    const gridStartTime = new Date(now);
+                    gridStartTime.setMinutes(0, 0, 0);
+        
+                    epg.prepareChannelData(data);
+                    const timeAxis = epg.calculateTimeAxis(gridStartTime);
+                    const minuteToY = epg.renderTimeAxis(timeAxis, gridStartTime);
+                    
+                    epg.sortAndOrderChannels(now);
+                    epg.renderChannelHeaders(now);
+        
+                    epg.renderStreamCards(minuteToY, gridStartTime, now);
+                    
+                    epg.triggerInitialPlay(now);
+                }
+            };    
+        // --- 初期化処理 ---------------------------------------
+        function init() {
+            // イベントリスナーを設定
+            document.addEventListener('DOMContentLoaded', () => {
+                dom.playerSection.addEventListener('click', ui.handleMobileGuard, true);
+                dom.playerSection.addEventListener('touchstart', ui.handleMobileGuard, { passive: false });
+            });
+    
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowLeft') player.changeChannel(-1);
+                if (e.key === 'ArrowRight') player.changeChannel(1);
+            });
+    
+            // グローバルに関数を公開する必要があるもの
+            window.setMode = ui.setMode;
+            window.openYouTube = player.openYouTube;
+            window.closeGuard = ui.closeMemberGuard;
+    
+            // EPGを読み込み、定期更新を開始
+            api.loadEPG();
+            setInterval(api.loadEPG, config.UPDATE_INTERVAL_MS);
+        }
+    
+        init();
+    
+    })();

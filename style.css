@@ -1,0 +1,271 @@
+
+        :root {
+            --bg: #0f0f0f; /*背景色*/
+            --accent: #00d4ff; /*アクセントカラー*/
+            --header-h: 50px; /*ヘッダー（切替ボタン・視聴中ch名エリア）の高さ*/
+            --ch-width: 100px; /*チャンネル名の幅*/
+            --time-w: 30px; /*時刻軸の幅*/
+            --sticky-top-h: 130px; /*時刻NOWエリアの高さ*/
+            --slot-h: 60px; /*各スロット高さ*/
+            --full-h: 100dvh; /*番組表自体の最大縦サイズ*/
+        }
+
+        /* 1. 全要素の計算を「境界線込み」に統一 */
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body, html { margin: 0; padding: 0; height: var(--full-h); background: var(--bg); color: #fff; font-family: sans-serif; overflow: hidden; }
+
+        header {
+            height: var(--header-h); background: #1a1a1a; display: flex;
+            align-items: center; justify-content: space-between; padding: 0 10px;
+            border-bottom: 1px solid #333; z-index: 2000;
+        }
+        
+        .nav-group { display: flex; gap: 8px; align-items: center; }
+        /* チャンネル名の省略設定 */
+        #current-ch-name {
+            font-size: 11px; 
+            color: var(--accent); 
+            width: 120px; /* 固定幅 */
+            text-align: center; 
+            overflow: hidden; 
+            text-overflow: ellipsis; /* はみ出しを「...」に */
+            white-space: nowrap;
+            font-weight: bold;
+            display: inline-block;
+        }
+        button { 
+            background: #333; border: 1px solid #444; color: #fff; 
+            padding: 6px 10px; cursor: pointer; border-radius: 6px; 
+            font-size: 14px; /* アイコンを少し大きく表示 */
+            font-weight: bold; 
+            transition: 0.2s;
+        }
+        button.active { background: var(--accent); color: #000; border-color: var(--accent); }
+
+        #app-container { display: flex; height: calc(var(--full-h) - var(--header-h)); width: 100%; position: relative; }
+
+        #player-section { flex: 1; background: #000; position: relative; z-index: 10; overflow: hidden; }
+        #chat-area { width: 320px; background: #000; border-left: 1px solid #222; z-index: 5; }
+        #epg-section { display: none; flex: 1; overflow: auto; width: 100%; height: 100%; position: relative; background: var(--bg); }
+        
+        #video-iframe { width: 100%; height: 100%; border: none; }
+
+        body.mode-epg #epg-section { display: block; }
+
+        /* PC & スマホ横のEPGモード: 25% 小窓 */
+        @media screen and (min-width: 769px), (orientation: landscape) {
+            body.mode-epg #player-section {
+                position: fixed; bottom: 15px; right: 15px; 
+                width: 25vw; min-width: 180px; aspect-ratio: 16/9;
+                z-index: 1500; border: 2px solid #444; box-shadow: 0 10px 30px #000; flex: none;
+                pointer-events: auto;
+            }
+            body.mode-epg #chat-area { display: none; }
+        }
+
+        /* スマホ縦 */
+        @media screen and (max-width: 768px) and (orientation: portrait) {
+            #app-container { flex-direction: column; }
+            #player-section { height: 30vh; flex: none; }
+            #chat-area { width: 100%; flex: 1; border-left: none; border-top: 1px solid #222; overflow: hidden; }
+            body.mode-watch #epg-section { display: none; }
+            body.mode-epg #chat-area { display: none; }
+            body.mode-epg #epg-section { display: block; flex: 1; }
+            body.mode-epg #player-section { position: relative; width: 100%; bottom: auto; right: auto; aspect-ratio: auto; height: 30vh; }
+        }
+
+        /* スマホ横・視聴画面：チャットなし全画面 */
+        @media screen and (max-width: 950px) and (orientation: landscape) {
+            header { height: 40px; }
+            #app-container { height: calc(var(--full-h) - 40px); }
+            body.mode-watch #chat-area { display: none !important; }
+            body.mode-watch #player-section { width: 100vw !important; height: 100%; flex: none; }
+            #video-iframe { width: 100%; height: 100%; object-fit: contain; }
+        }
+
+        /* --- EPG内部デザイン修正 --- */
+        #epg-wrapper { display: inline-block; position: relative; min-width: 100%; vertical-align: top; }
+        
+        /* 2. 時刻軸のborderを「内側」に */
+        #epg-times-axis { position: sticky; left: 0; width: var(--time-w); background: #151515; border-right: 1px solid #333; z-index: 100; float: left; }
+        
+        .time-axis-header {
+            height: var(--sticky-top-h); background: #1a1a1a; display: flex; flex-direction: column; 
+            align-items: center; justify-content: center; color: var(--accent); font-weight: bold; font-size: 11px;
+            border-bottom: 2px solid #f33; position: sticky; top: 0; z-index: 110;
+        }
+
+        /* 3. マスの高さを120px（線込み）に固定 */
+        .time-slot { height: var(--slot-h); display: flex; align-items: center; justify-content: center; font-size: 10px; border-bottom: 1px solid #333; }
+
+        #epg-sticky-header { position: sticky; top: 0; z-index: 90; display: flex; background: var(--bg); margin-left: var(--time-w); width: fit-content;}
+        
+        .ch-col-header { width: var(--ch-width); min-width: var(--ch-width); border-right: 1px solid #333; flex-shrink: 0; }
+        .ch-name-box { height: 30px; background: #1a1a1a; display: flex; align-items: center; justify-content: center; border-bottom: 1px solid #333; font-size: 10px; 
+        }
+        /* EPGのチャンネル名ボックスが「視聴中」の時のスタイル */
+.ch-name-box.active-ch {
+    background: var(--accent) !important; /* アクセントカラー（水色）に変更 */
+    color: #000 !important; /* 文字を黒にして読みやすく */
+    font-weight: bold;
+    box-shadow: inset 0 0 10px rgba(255,255,255,0.5);
+}
+        
+        /* 4. NOWエリアの高さ 100px（線込み） */
+        .now-stream-box {
+            height: 100px; background: #200; border-bottom: 2px solid #f33; padding: 8px; font-size: 10px; cursor: pointer;
+            overflow: hidden; display: flex; align-items: center; justify-content: center; text-align: center; font-weight: bold;
+        }
+        .now-stream-box.member { background: #003311; border-bottom-color: #00ff66;  }
+        .now-stream-box.singing { background: #33001a; border-bottom-color: #ff69b4;  }
+        .now-stream-box.live3d { background: #332a00; border-bottom-color: #ffd700;  }
+        .now-stream-box.empty { background: #111; border-bottom-color: #333;  }
+
+        /* 5. 配信予定エリアの背景グリッド：線の重なりを解消 */
+        #epg-grid-body { position: relative; margin-left: var(--time-w); background: #0f0f0f; }
+        #epg-grid-body::before {
+            content: ""; position: absolute; inset: 0;
+            background-image: linear-gradient(to bottom, #333 1px, transparent 1px);
+            background-size: 100% var(--slot-h); 
+            background-position: 0 -1px; /* 最初の1pxを上にずらしてborderと同期 */
+            pointer-events: none; z-index: 1;
+        }
+        #epg-grid-body::after {
+            content: ""; position: absolute; inset: 0;
+            background-image: linear-gradient(to right, #333 1px, transparent 1px);
+            background-size: var(--ch-width) 100%; 
+            background-position: -1px 0; /* 左の1pxをずらしてborderと同期 */
+            pointer-events: none; z-index: 1;
+        }
+
+        /* メン限ガードを動画の上に重ねる設定 */
+        #member-guard {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85); /* 背景を暗く */
+            z-index: 1000; /* iframeより上に */
+            display: none; /* JSでflexに切り替え */
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            text-align: center;
+            backdrop-filter: blur(4px); /* 背景をぼかすとおしゃれ */
+        }
+.stream-card {
+    position: absolute;
+    width: calc(var(--ch-width) - 4px);
+    margin: 0 2px;
+    height: 58px; 
+    padding: 2px 4px; 
+    border-radius: 2px;
+    font-size: 9px;
+    line-height: 1.1;
+    cursor: pointer;
+    background: #222;
+    border-left: 3px solid #f33; /* デフォルトを赤に */
+    color: #eee;
+    overflow: hidden;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    z-index: 10;
+    word-break: break-all;
+}
+
+/* 配信種別ごとの色分け */
+.stream-card.member { border-left-color: #00ff66; }  /* メンバー限定: 緑 */
+.stream-card.live3d { border-left-color: #ffd700; }  /* 3Dライブ: 黄 */
+.stream-card.singing { border-left-color: #ff69b4; } /* 歌枠: ピンク */
+
+        /* --- 透明ガードの統合設定 --- */
+        
+        /* ガード自体の見た目（完全に透明だが、クリックは吸い取る） */
+        #player-section.needs-first-tap::after {
+            content: ""; /* 文字も出さず完全に透明 */
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0); /* 完全に透明 */
+            z-index: 2005;
+            display: block;
+            cursor: pointer;
+            pointer-events: auto;
+        }
+
+        /* クラスがない時は絶対に出さない */
+        #player-section:not(.needs-first-tap)::after {
+            display: none !important;
+        }
+
+        /* ガードがある間は、背後のiframeへの直接操作を禁止 */
+        #player-section.needs-first-tap iframe {
+            pointer-events: none;
+        }
+        /* タップ後はiframeの操作を許可 */
+        #player-section:not(.needs-first-tap) iframe {
+            pointer-events: auto;
+        }
+
+/* --- Added by Refactoring --- */
+
+.grid-background {
+    position: absolute;
+    left: 0;
+    width: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
+
+.grid-background.even-day {
+    background: rgba(0, 50, 100, 0.12);
+}
+
+.time-slot.even-day {
+    background-color: rgba(0, 50, 100, 0.12);
+}
+
+.time-slot-date-change {
+    height: var(--slot-h);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    line-height: 1.1;
+}
+
+.time-slot-date-change.even-day-label {
+    background-color: rgba(0, 30, 70, 0.25);
+}
+
+.time-slot-date-change.odd-day-label {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.time-slot-date {
+    font-size: 10px;
+    color: var(--accent);
+    font-weight: bold;
+}
+
+.ch-col-header-img {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+.stream-card {
+    height: 60px;
+}
+
+.stream-card-date {
+    color: var(--accent);
+    font-weight: bold;
+    font-size: 9px;
+    margin-bottom: 4px;
+}
+
+.stream-card-title {
+    line-height: 1.2;
+    word-break: break-all;
+}
