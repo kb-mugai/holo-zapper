@@ -67,22 +67,51 @@
         };
     
         // --- API関連 ------------------------------------------
-        const api = {
-            loadEPG: async () => {
-                try {
-                    console.log("Fetching EPG data...");
-                    const res = await fetch(config.GAS_URL);
-                    state.cachedData = await res.json();
-                    if (!state.cachedData || state.cachedData.length === 0) {
-                        console.warn("No data received from GAS");
-                        return;
-                    }
-                    epg.render(state.cachedData);
-                } catch(e) { 
-                    console.error("EPG Load Error:", e); 
-                }
+const api = {
+    loadEPG: async () => {
+        try {
+            console.log("Fetching EPG data...");
+            
+            // 1. 通信開始のマーク（必要に応じてローディング表示などを追加）
+            // 古いデータとの混同を避けるため、コンソールで追跡
+            const fetchStartTime = Date.now();
+
+            const res = await fetch(config.GAS_URL);
+            
+            // 2. HTTPエラーのチェック（200 OK以外を弾く）
+            if (!res.ok) {
+                throw new Error(`HTTP error! status: ${res.status}`);
             }
-        };
+
+            const freshData = await res.json();
+            
+            // 3. データの検証
+            if (!freshData || !Array.isArray(freshData)) {
+                console.warn("Invalid data format received from GAS");
+                return;
+            }
+
+            if (freshData.length === 0) {
+                console.warn("Received empty stream list");
+                // データが空の場合は、あえて画面をクリアするか、前の状態を維持するか判断
+                // ここでは「最新の空の状態」を反映させるためにrenderを呼びます
+            }
+
+            // 4. ステートの更新と描画の実行
+            // GASから返ってきた最新のJSONを確実にstateにセット
+            state.cachedData = freshData;
+            
+            console.log(`Data received. Count: ${freshData.length} (${Date.now() - fetchStartTime}ms)`);
+            
+            // 描画実行（render内でDOMは一旦全クリアされる仕組みになっています）
+            epg.render(state.cachedData);
+
+        } catch(e) { 
+            console.error("EPG Load Error (Network or Parse):", e); 
+            // 失敗した場合は、ユーザーにわかるようコンソール以外に通知を出すことも検討
+        }
+    }
+};
     
         // --- UI関連 -------------------------------------------
         const ui = {
@@ -342,29 +371,40 @@
                     }
                 },
         
-                render: (data) => {
-                    dom.epgStickyHeader.innerHTML = ''; 
-                    dom.epgGridBody.innerHTML = ''; 
-                    dom.epgTimesList.innerHTML = '';
-                    
-                    const now = new Date();
-                    dom.epgDate.innerText = `${now.getMonth()+1}/${now.getDate()}`;
-                    
-                    const gridStartTime = new Date(now);
-                    gridStartTime.setMinutes(0, 0, 0);
+render: (data) => {
+        // ★重要: 描画の冒頭で既存のDOMを全て確実にクリアする
+        // これにより、古いデータが残ることは物理的にあり得なくなります
+        dom.epgStickyHeader.innerHTML = ''; 
+        dom.epgGridBody.innerHTML = ''; 
+        dom.epgTimesList.innerHTML = '';
         
-                    epg.prepareChannelData(data);
-                    const timeAxis = epg.calculateTimeAxis(gridStartTime);
-                    const minuteToY = epg.renderTimeAxis(timeAxis, gridStartTime);
-                    
-                    epg.sortAndOrderChannels(now);
-                    epg.renderChannelHeaders(now);
+        // データが空ならここで終了
+        if (!data || data.length === 0) {
+            dom.epgGridBody.innerHTML = '<div style="padding:20px; color:white;">ライブ予定が見つかりませんでした</div>';
+            return;
+        }
+
+        const now = new Date();
+        dom.epgDate.innerText = `${now.getMonth()+1}/${now.getDate()}`;
         
-                    epg.renderStreamCards(minuteToY, gridStartTime, now);
-                    
-                    epg.triggerInitialPlay(now);
-                }
-            };    
+        const gridStartTime = new Date(now);
+        gridStartTime.setMinutes(0, 0, 0);
+
+        // 各工程を実行
+        epg.prepareChannelData(data);
+        const timeAxis = epg.calculateTimeAxis(gridStartTime);
+        const minuteToY = epg.renderTimeAxis(timeAxis, gridStartTime);
+        
+        epg.sortAndOrderChannels(now);
+        epg.renderChannelHeaders(now);
+        epg.renderStreamCards(minuteToY, gridStartTime, now);
+        
+        // 初回プレイまたはチャンネルが変わっていない場合の整合性チェック
+        epg.triggerInitialPlay(now);
+        
+        console.log("EPG Render complete with fresh data.");
+    }
+};
         // --- 初期化処理 ---------------------------------------
         function init() {
             // イベントリスナーを設定
