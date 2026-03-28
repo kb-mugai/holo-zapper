@@ -113,7 +113,7 @@ const api = {
     }
 };
     
-        // --- UI関連 -------------------------------------------
+// --- UI関連 -------------------------------------------
         const ui = {
             setMode: (m) => {
                 document.body.className = 'mode-' + m;
@@ -123,10 +123,12 @@ const api = {
             closeMemberGuard: () => { 
                 dom.memberGuard.style.display = 'none'; 
             },
+            // ★修正：判定を「含む」に変更し、画像があっても検知できるように
             updateActiveChannel: (name) => {
+                const targetShortName = name.substring(0, config.CH_NAME_TRUNCATE_LIMIT).trim();
                 document.querySelectorAll('.ch-name-box').forEach(el => {
                     el.classList.remove('active-ch');
-                    if (el.innerText.trim() === name.substring(0, config.CH_NAME_TRUNCATE_LIMIT).trim()) {
+                    if (el.textContent.includes(targetShortName)) {
                         el.classList.add('active-ch');
                     }
                 });
@@ -140,21 +142,28 @@ const api = {
                     }
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log("Guard cleared & Play command sent");
                 }
             }
         };
         
         // --- プレイヤー関連 -------------------------------------
+// --- プレイヤー関連 -------------------------------------
         const player = {
             play: (id, name, title, member) => {
+                // 現在の動画IDを確実に保存
                 state.currentVideoId = id;
+                
                 const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
                 dom.playerSection.classList.toggle('needs-first-tap', isMobileDevice);
     
                 dom.videoIframe.src = `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&rel=0&enablejsapi=1`;
                 dom.chatIframe.src = `https://www.youtube.com/live_chat?v=${id}&embed_domain=${window.location.hostname}`;
                 
+                // 読み込み完了でローディングを消す
+                dom.videoIframe.onload = () => {
+                    if (loader) loader.classList.add('hidden-loader');
+                };
+
                 dom.currentChName.innerText = name;
                 ui.updateActiveChannel(name);
     
@@ -165,21 +174,40 @@ const api = {
                     ui.closeMemberGuard();
                 }
             },
+
             changeChannel: (dir) => {
-                const lives = state.orderedIds.filter(id => {
-                    return state.channels[id].streams.some(s => utils.isLive(s));
-                });
-        
-                if (lives.length === 0) return;
+                const now = new Date();
+                // 1. 現在ライブ中のチャンネルを「今の並び順」で抽出
+                // state.orderedIds は render 時に決まった並び順を保持している
+                const liveChList = state.orderedIds
+                    .map(id => state.channels[id])
+                    .filter(ch => ch.streams.some(s => utils.isLive(s, now)));
+
+                if (liveChList.length === 0) return;
+
+                // 2. 「現在再生中のvideoId」を持っているチャンネルがリストのどこにいるか探す
+                let idx = liveChList.findIndex(ch => 
+                    ch.streams.some(s => s.id === state.currentVideoId)
+                );
+
+                // 3. インデックスの計算
+                if (idx === -1) {
+                    // 見つからない場合は0番目（リストの先頭）へ
+                    idx = 0;
+                } else {
+                    // 方向（dir）を加えてループさせる
+                    idx = (idx + dir + liveChList.length) % liveChList.length;
+                }
+
+                const targetCh = liveChList[idx];
+                // 4. そのチャンネルの「今ライブ中の配信」を探して再生
+                const targetStream = targetCh.streams.find(s => utils.isLive(s, now));
                 
-                let idx = lives.findIndex(id => state.channels[id].streams.some(s => s.id === state.currentVideoId));
-                idx = (idx === -1) ? 0 : (idx + dir + lives.length) % lives.length;
-                
-                const targetCh = state.channels[lives[idx]];
-                const targetStream = targetCh.streams.find(s => utils.isLive(s)) || targetCh.streams[0];
-        
-                player.play(targetStream.id, targetCh.info.name, targetStream.title, utils.isMemberOnlyStream(targetStream.title));
+                if (targetStream) {
+                    player.play(targetStream.id, targetCh.info.name, targetStream.title, utils.isMemberOnlyStream(targetStream.title));
+                }
             },
+
             openYouTube: () => { 
                 if (state.currentVideoId) window.open(`https://www.youtube.com/watch?v=${state.currentVideoId}`, '_blank'); 
             }
@@ -304,7 +332,9 @@ const api = {
                 
                                 const nameBox = document.createElement('div');
                                 nameBox.className = 'ch-name-box';
-                                if (ch.info.name === dom.currentChName.innerText) nameBox.classList.add('active-ch');
+                                if (ch.info.name.includes(dom.currentChName.innerText.trim()) && dom.currentChName.innerText !== "") {
+    nameBox.classList.add('active-ch');
+}
                                 nameBox.innerHTML = `<img class="ch-col-header-img" src="${ch.info.photo}">${utils.truncate(ch.info.name, config.CH_NAME_TRUNCATE_LIMIT)}`;
                                 
                                 const liveStream = ch.streams.find(s => utils.isLive(s, now));
@@ -418,7 +448,8 @@ render: (data) => {
                 if (e.key === 'ArrowRight') player.changeChannel(1);
             });
     
-            // グローバルに関数を公開する必要があるもの
+            // ★ここを修正：playerオブジェクトを丸ごと公開する
+            window.player = player; 
             window.setMode = ui.setMode;
             window.openYouTube = player.openYouTube;
             window.closeGuard = ui.closeMemberGuard;

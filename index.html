@@ -10,7 +10,7 @@
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>ホロザッパー ver1.1.1|非公式ホロライブJPメンバー専用TV風アプリ</title>
+    <title>ホロザッパー ver1.1.2|非公式ホロライブJPメンバー専用TV風アプリ</title>
     <meta name="description" content="hololiveJPメンバーに限定したシンプル非公式TV風アプリ。視聴と番組表機能。">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -22,11 +22,11 @@
         <button id="btn-epg" onclick="setMode('epg')" title="番組表">表</button>
     </div>
     
-    <div class="nav-group">
-        <button onclick="zap(-1)">◀</button>
-        <span id="current-ch-name">---</span>
-        <button onclick="zap(1)">▶</button>
-    </div>
+<div class="nav-group">
+    <button onclick="player.changeChannel(-1)">◀</button>
+    <span id="current-ch-name">---</span>
+    <button onclick="player.changeChannel(1)">▶</button>
+</div>
 
     <div style="width: 44px;"></div> 
 </header>
@@ -34,6 +34,8 @@
 <div id="app-container">
     <div id="player-section">
         <div id="video-container" style="width:100%; height:100%;">
+
+            
             <div id="member-guard">
                 <div style="font-size: 40px; margin-bottom: 10px;">🔒</div>
                 <div id="guard-title" style="color:#00ff66; margin-bottom:15px; font-size:11px; font-weight:bold;">メン限</div>
