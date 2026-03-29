@@ -36,7 +36,8 @@
             epgTimesList: document.getElementById('epg-times-list'),
             epgDate: document.getElementById('epg-date'),
             btnWatch: document.getElementById('btn-watch'),
-            btnEpg: document.getElementById('btn-epg')
+            btnEpg: document.getElementById('btn-epg'),
+           videoLoader: document.getElementById('video-loader'),
         };
     
         // --- ユーティリティ関数 ---------------------------------
@@ -146,26 +147,30 @@ const api = {
             }
         };
         
-        // --- プレイヤー関連 -------------------------------------
 // --- プレイヤー関連 -------------------------------------
         const player = {
             play: (id, name, title, member) => {
-                // 現在の動画IDを確実に保存
+                if (!id) return;
                 state.currentVideoId = id;
-                
+
+                if (dom.videoLoader) dom.videoLoader.classList.remove('hidden-loader');
+
                 const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
                 dom.playerSection.classList.toggle('needs-first-tap', isMobileDevice);
     
+                dom.videoIframe.onload = null; 
+                dom.videoIframe.onload = () => {
+                    console.log("Video Iframe loaded:", id);
+                    if (dom.videoLoader) {
+                        dom.videoLoader.classList.add('hidden-loader');
+                    }
+                };
+
                 dom.videoIframe.src = `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&rel=0&enablejsapi=1`;
                 dom.chatIframe.src = `https://www.youtube.com/live_chat?v=${id}&embed_domain=${window.location.hostname}`;
                 
-                // 読み込み完了でローディングを消す
-                dom.videoIframe.onload = () => {
-                    if (loader) loader.classList.add('hidden-loader');
-                };
-
                 dom.currentChName.innerText = name;
-                ui.updateActiveChannel(name);
+                ui.updateActiveChannel(name);                
     
                 if (member) {
                     dom.guardTitle.innerText = title;
@@ -173,6 +178,13 @@ const api = {
                 } else {
                     ui.closeMemberGuard();
                 }
+
+                setTimeout(() => {
+                    if (dom.videoLoader && !dom.videoLoader.classList.contains('hidden-loader')) {
+                        dom.videoLoader.classList.add('hidden-loader');
+                    }
+                }, 5000);
+
             },
 
             changeChannel: (dir) => {
@@ -262,6 +274,9 @@ const api = {
                 },
         
                         renderTimeAxis: (timeAxis, gridStartTime) => {
+                            const gridFragment = document.createDocumentFragment();
+                            const timeFragment = document.createDocumentFragment();
+
                             let currentY = 0;
                             const minuteToY = [];
                             let lastDateValue = -1;
@@ -283,7 +298,7 @@ const api = {
                                         bg.className = 'grid-background even-day';
                                         bg.style.top = `${currentY}px`;
                                         bg.style.height = `${config.HOUR_SLOT_HEIGHT}px`;
-                                        dom.epgGridBody.appendChild(bg);
+                                        gridFragment.appendChild(bg);
                                     }
                 
                                     const timeSlotDiv = document.createElement('div');
@@ -300,7 +315,7 @@ const api = {
                                     } else {
                                         timeSlotDiv.innerText = `${hour}:00`;
                                     }
-                                    dom.epgTimesList.appendChild(timeSlotDiv);
+                                    timeFragment.appendChild(timeSlotDiv);
                 
                                     for (let m = 0; m < 60; m++) { minuteToY.push(currentY + m); }
                                     currentY += config.HOUR_SLOT_HEIGHT;
@@ -309,6 +324,9 @@ const api = {
                                 }
                                 lastDateValue = currentDateValue;
                             }
+                            dom.epgGridBody.appendChild(gridFragment);
+                            dom.epgTimesList.appendChild(timeFragment);
+
                             dom.epgGridBody.style.height = `${currentY}px`;
                             return minuteToY;
                         },
@@ -324,6 +342,8 @@ const api = {
                 
                         renderChannelHeaders: (now) => {
                             dom.epgGridBody.style.width = `${state.orderedIds.length * config.CH_COL_WIDTH}px`;
+
+                            const fragment = document.createDocumentFragment();
                 
                             state.orderedIds.forEach((chId) => {
                                 const ch = state.channels[chId];
@@ -355,11 +375,14 @@ const api = {
                                 nowBox.className = nowBoxClass;
                                 nowBox.innerHTML = prefix + displayTitle;
                                 col.appendChild(nameBox); col.appendChild(nowBox);
-                                dom.epgStickyHeader.appendChild(col);
+                                fragment.appendChild(col);
                             });
+                            dom.epgStickyHeader.appendChild(fragment);
                         },
                 
                         renderStreamCards: (minuteToY, gridStartTime, now) => {
+                            const fragment = document.createDocumentFragment();
+                            
                             state.orderedIds.forEach((chId, idx) => {
                                 const ch = state.channels[chId];
                                 const chX = idx * config.CH_COL_WIDTH;
@@ -384,10 +407,11 @@ const api = {
                                         const dateS = `${st.getMonth()+1}/${st.getDate()} ${st.getHours()}:${st.getMinutes().toString().padStart(2,'0')}`;
                                         card.innerHTML = `<div class="stream-card-date">${dateS}</div><div class="stream-card-title">${utils.truncate(s.title, config.TRUNCATE_LIMIT)}</div>`;
                                         card.onclick = () => player.play(s.id, ch.info.name, s.title, mem);
-                                        dom.epgGridBody.appendChild(card);
+                                        fragment.appendChild(card);
                                     }
                                 });
                             });
+                            dom.epgGridBody.appendChild(fragment);
                         },        
                 triggerInitialPlay: (now) => {
                     if (state.isFirstPlay && state.orderedIds.length > 0) {
