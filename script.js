@@ -148,44 +148,59 @@ const api = {
         };
         
 // --- プレイヤー関連 -------------------------------------
-        const player = {
-            play: (id, name, title, member) => {
-                if (!id) return;
-                state.currentVideoId = id;
+        // --- プレイヤー関連 -------------------------------------
+const player = {
+    play: (id, name, title, member) => {
+        if (!id) return;
+        state.currentVideoId = id;
 
-                if (dom.videoLoader) dom.videoLoader.classList.remove('hidden-loader');
+        // ローダー（クルクル）を表示
+        if (dom.videoLoader) dom.videoLoader.classList.remove('hidden-loader');
 
-                const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                dom.playerSection.classList.toggle('needs-first-tap', isMobileDevice);
-    
-                dom.videoIframe.onload = null; 
-                dom.videoIframe.onload = () => {
-                    console.log("Video Iframe loaded:", id);
-                    if (dom.videoLoader) {
-                        dom.videoLoader.classList.add('hidden-loader');
-                    }
-                };
+        const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        dom.playerSection.classList.toggle('needs-first-tap', isMobileDevice);
 
-                dom.videoIframe.src = `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&rel=0&enablejsapi=1`;
-                dom.chatIframe.src = `https://www.youtube.com/live_chat?v=${id}&embed_domain=${window.location.hostname}`;
-                
-                dom.currentChName.innerText = name;
-                ui.updateActiveChannel(name);                
-    
-                if (member) {
-                    dom.guardTitle.innerText = title;
-                    dom.memberGuard.style.display = 'flex';
-                } else {
-                    ui.closeMemberGuard();
-                }
+        // ★修正：iframe読み込み完了時の処理
+        dom.videoIframe.onload = () => {
+            console.log("Video Iframe loaded:", id);
+            
+            // ローダー（クルクル）を消す
+            if (dom.videoLoader) {
+                dom.videoLoader.classList.add('hidden-loader');
+            }
 
-                setTimeout(() => {
-                    if (dom.videoLoader && !dom.videoLoader.classList.contains('hidden-loader')) {
-                        dom.videoLoader.classList.add('hidden-loader');
-                    }
-                }, 5000);
+            // メン限の場合、YouTube側が「再生不可」を返して読み込み完了になるため
+            // ここでガードを再表示（維持）させる
+            if (member) {
+                dom.memberGuard.style.display = 'flex';
+            }
+        };
 
-            },
+        dom.videoIframe.src = `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&rel=0&enablejsapi=1`;
+        dom.chatIframe.src = `https://www.youtube.com/live_chat?v=${id}&embed_domain=${window.location.hostname}`;
+        
+        dom.currentChName.innerText = name;
+        ui.updateActiveChannel(name);                
+
+        // ガードの初期表示判定
+        if (member) {
+            dom.guardTitle.innerText = title;
+            dom.memberGuard.style.display = 'flex';
+        } else {
+            ui.closeMemberGuard();
+        }
+
+        // ★修正：5秒後の強制非表示処理
+        setTimeout(() => {
+            // メン限でない時だけ、ローダーを強制的に消す
+            // （メン限時は onload 側で制御するため、ここでは何もしない）
+            if (!member && dom.videoLoader && !dom.videoLoader.classList.contains('hidden-loader')) {
+                dom.videoLoader.classList.add('hidden-loader');
+            }
+        }, 5000);
+
+    },
+    // ... changeChannel, openYouTube はそのまま ...
 
             changeChannel: (dir) => {
                 const now = new Date();
