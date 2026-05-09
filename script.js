@@ -2,9 +2,9 @@
         'use strict';
     
         // --- 設定値 -------------------------------------------
-        const config = { //0aOfficial：ホロライブ公式,0fOfficial：ホロEN公式,0dOfficial：DEV_IS公式,holoANは検証中
+        const config = { //0aOfficial：ホロライブ公式,0fOfficial：ホロEN公式,0dOfficial：DEV_IS公式,holoAN：0hOfficial,
             GAS_URL: "https://script.google.com/macros/s/AKfycbwS7RwwL7n15B8LNEu3AK9P9pmghhVK2cKJ6S-PTR2M2eYAyiPztbCIKs1jM5Ob6uT_bA/exec",
-            ALLOWED_GENS: ["0aOfficial","holoAN","0fOfficial","0dOfficial","0th Gen", "1st Gen", "2nd Gen", "Gamers", "3rd Gen", "4th Gen", "5th Gen", "6th Gen", "Secret Society holoX", "DEV_IS ReGLOSS", "DEV_IS FLOW GLOW"],
+            ALLOWED_GENS: ["0aOfficial","0hOfficial","0fOfficial","0dOfficial","0th Gen", "1st Gen", "2nd Gen", "Gamers", "3rd Gen", "4th Gen", "5th Gen", "6th Gen", "Secret Society holoX", "DEV_IS ReGLOSS", "DEV_IS FLOW GLOW"],
             MEMBER_ONLY_REGEX: /メン限|メンバー限定|Member Only|Membership/i,
             LIVE_THRESHOLD_MS: 12 * 60 * 60 * 1000,
             UPDATE_INTERVAL_MS: 2 * 60 * 1000,
