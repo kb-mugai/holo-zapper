@@ -177,8 +177,8 @@ const player = {
         };
 
         dom.videoIframe.src = `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&rel=0&enablejsapi=1`;
-        dom.chatIframe.src = `https://www.youtube.com/live_chat?v=${id}&embed_domain=${window.location.hostname}`;
-        
+        // &theme=dark または &dark_theme=1 を追加
+        dom.chatIframe.src = `https://www.youtube.com/live_chat?v=${id}&embed_domain=${window.location.hostname}&theme=dark`;
         dom.currentChName.innerText = name;
         ui.updateActiveChannel(name);                
 
